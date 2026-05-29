@@ -1,0 +1,481 @@
+! (C) Copyright 2015- ECMWF.
+! 
+! This software is licensed under the terms of the Apache Licence Version 2.0
+! which can be obtained at http://www.apache.org/licenses/LICENSE-2.0.
+! In applying this licence, ECMWF does not waive the privileges and immunities
+! granted to it by virtue of its status as an intergovernmental organisation
+! nor does it submit to any jurisdiction.
+!
+! Shared implementation body for the precision-specific Bluestein submodules.
+!
+! This file is included from BLUESTEIN_SP_SMOD and BLUESTEIN_DP_SMOD after the
+! including submodule defines the precision-specific aliases for FFTB_PLAN,
+! FFTB_TYPE, BLUESTEIN_INIT, BLUESTEIN_FFT, and BLUESTEIN_TERM. It is not a
+! standalone module or submodule.
+!
+! The including submodule must also provide JPRB, JPIM, and the USE
+! association for FFT992, FFT992_CC, and SET99B.
+
+#ifndef FFTB_PLAN
+#error "FFTB_PLAN must be defined before including bluestein_impl.F90"
+#endif
+
+#ifndef FFTB_TYPE
+#error "FFTB_TYPE must be defined before including bluestein_impl.F90"
+#endif
+
+#ifndef BLUESTEIN_INIT
+#error "BLUESTEIN_INIT must be defined before including bluestein_impl.F90"
+#endif
+
+#ifndef BLUESTEIN_FFT
+#error "BLUESTEIN_FFT must be defined before including bluestein_impl.F90"
+#endif
+
+#ifndef BLUESTEIN_TERM
+#error "BLUESTEIN_TERM must be defined before including bluestein_impl.F90"
+#endif
+
+INTEGER(KIND=JPIM), PARAMETER :: NMAX_UPPER_LIMIT = 32000
+
+!-----------------------------------------------------------------------------
+CONTAINS
+!-----------------------------------------------------------------------------
+
+MODULE PROCEDURE BLUESTEIN_FFT
+! N   : FFT LENGTH  
+! KSIGN   : FFT DIRECTION
+!           -1  DIRECT  (R2C)
+!            1  INVERSE (C2R)
+REAL(KIND=JPRB),ALLOCATABLE :: ZDATAR(:,:), ZDATAI(:,:),ZY(:,:)
+REAL(KIND=JPRB) :: ZR(KLOT),ZI(KLOT),ZX0(KLOT)
+REAL(KIND=JPRB) :: ZWR,ZWI
+INTEGER(KIND=JPIM) :: I,K,M,JLOT,NN,II,IR,IPO2,ICLEN,EFFECTIVE_LAYOUT
+INTEGER(KIND=JPIM) :: IJUMP,ILOT,IINC,ISIGN,IFFTSIGN
+#include "abor1.intfb.h"
+
+!WRITE(*,'("BLUESTEIN_FFT: N=",I6," KSIGN=",I2," KLOT=",I4)')&
+!  & N,KSIGN,KLOT
+
+IF( KSIGN/=-1 .AND. KSIGN/=1 )THEN
+  CALL ABOR1('BLUESTEIN_FFT: INVALID KSIGN')
+ENDIF
+
+CALL BLUESTEIN_PLAN_FFT(TB, N)
+
+NN=N/2+1
+ICLEN=2*NN
+
+IF( TB%FFTB(N)%NSIZE /= N )THEN
+  WRITE(0,'("BLUESTEIN_FFT: UNEXPECTED PLAN LATITUDE LENGTH, N=",I6," TB%FFTB(N)%NSIZE=",I6)')&
+   & N,TB%FFTB(N)%NSIZE
+  CALL ABOR1('BLUESTEIN_FFT: UNEXPECTED PLAN LATITUDE LENGTH')
+ENDIF
+
+EFFECTIVE_LAYOUT = BLUESTEIN_LAYOUT_LOT_CONTIGUOUS
+IF (PRESENT(LAYOUT)) EFFECTIVE_LAYOUT = LAYOUT
+
+SELECT CASE (EFFECTIVE_LAYOUT)
+CASE (BLUESTEIN_LAYOUT_LOT_CONTIGUOUS)
+  IF (SIZE(PDAT,1) < KLOT .OR. SIZE(PDAT,2) < ICLEN) THEN
+    CALL ABOR1('BLUESTEIN_FFT: LOT-CONTIGUOUS BUFFER TOO SMALL')
+  END IF
+CASE (BLUESTEIN_LAYOUT_FFT_CONTIGUOUS)
+  IF (SIZE(PDAT,1) < ICLEN .OR. SIZE(PDAT,2) < KLOT) THEN
+    CALL ABOR1('BLUESTEIN_FFT: FFT-CONTIGUOUS BUFFER TOO SMALL')
+  END IF
+CASE DEFAULT
+  CALL ABOR1('BLUESTEIN_FFT: INVALID LAYOUT')
+END SELECT
+
+IF( KSIGN==-1 )THEN
+  ISIGN=1
+ELSE
+  ISIGN=2
+ENDIF
+
+! input data preparation
+
+ALLOCATE(ZDATAR(KLOT,0:ICLEN-1))
+ALLOCATE(ZDATAI(KLOT,0:ICLEN-1))
+ZDATAR(:,:)=0.0_JPRB
+ZDATAI(:,:)=0.0_JPRB
+SELECT CASE (EFFECTIVE_LAYOUT)
+CASE (BLUESTEIN_LAYOUT_LOT_CONTIGUOUS)
+  IF( KSIGN==-1 )THEN
+    DO K=0,N-1
+      DO JLOT=1,KLOT
+        ZDATAR(JLOT,K)=PDAT(JLOT,K+1)
+      ENDDO
+    ENDDO
+  ELSEIF( KSIGN==1 )THEN
+    DO JLOT=1,KLOT
+      DO K=0,NN-1
+        ZDATAR(JLOT,K)=PDAT(JLOT,K*2+1)
+        ZDATAR(JLOT,N-K)=PDAT(JLOT,K*2+1)
+        ZDATAI(JLOT,K)=PDAT(JLOT,K*2+2)
+        ZDATAI(JLOT,N-K) = -PDAT(JLOT,K*2+2)
+      ENDDO
+      ZDATAI(JLOT,0)=0._JPRB
+    ENDDO
+  ENDIF
+CASE (BLUESTEIN_LAYOUT_FFT_CONTIGUOUS)
+  IF( KSIGN==-1 )THEN
+    DO K=0,N-1
+      DO JLOT=1,KLOT
+        ZDATAR(JLOT,K)=PDAT(K+1,JLOT)
+      ENDDO
+    ENDDO
+  ELSEIF( KSIGN==1 )THEN
+    DO JLOT=1,KLOT
+      DO K=0,NN-1
+        ZDATAR(JLOT,K)=PDAT(K*2+1,JLOT)
+        ZDATAR(JLOT,N-K)=PDAT(K*2+1,JLOT)
+        ZDATAI(JLOT,K)=PDAT(K*2+2,JLOT)
+        ZDATAI(JLOT,N-K) = -PDAT(K*2+2,JLOT)
+      ENDDO
+      ZDATAI(JLOT,0)=0._JPRB
+    ENDDO
+  ENDIF
+END SELECT
+
+!
+! Compute M as the smallest power of two that is greater than or equal to 2N-2
+! and compute the M vector H2 from equations (2.16)
+!
+
+M=1
+IPO2=0
+DO WHILE( M<=2*N-2)
+  M=M*2
+  IPO2=IPO2+1
+ENDDO
+
+ALLOCATE(ZY(2*KLOT,0:(M/2+1)*2))
+
+! create Y by mult with bluestein n**2
+
+ZX0(1:KLOT) = ZDATAR(1:KLOT,0)
+DO I=0,N-1
+
+  ZR=ZDATAR(1:KLOT,I)
+  ZI=ZDATAI(1:KLOT,I)
+
+  ZWR=TB%FFTB(N)%HS(1,I,ISIGN)
+  ZWI=TB%FFTB(N)%HS(2,I,ISIGN)
+
+  DO K=1,KLOT
+    ZY((K-1)*2+1,I) = ZR(K)*ZWR + ZI(K)*ZWI
+    ZY((K-1)*2+2,I) = ZI(K)*ZWR - ZR(K)*ZWI
+  ENDDO
+
+ENDDO
+
+! zero padding of Y
+
+DO I=N,(M/2+1)*2
+  ZY(:,I) = 0._JPRB
+ENDDO
+
+! FFT of Y
+
+ILOT=2*KLOT
+IINC=ILOT
+IJUMP=1
+IFFTSIGN=-1  ! R->C
+
+CALL FFT992(ZY,TB%FFT992_TABLE(IPO2)%TRIGS,TB%FFT992_TABLE(IPO2)%NFAX,IINC,IJUMP,M,ILOT,IFFTSIGN,1.0_JPRB/REAL(M,KIND=JPRB))
+CALL FFT992_CC(ZY, IINC, IJUMP, M, ILOT, IFFTSIGN)
+
+! convert real FFT output, pointwise multiplication with h_hat(n-k) and real/imag
+! swap in preparation for inverse FFT
+
+DO I=0,M-1
+  DO K=1,KLOT
+    ZR(K)=ZY((K-1)*2+1,I)
+    ZI(K)=ZY((K-1)*2+2,I)
+  ENDDO
+
+  ZWR=TB%FFTB(N)%H2xT(1,I,ISIGN)
+  ZWI=TB%FFTB(N)%H2xT(2,I,ISIGN)
+
+! swap
+  DO K=1,KLOT
+    ZY((K-1)*2+1,I) = ZI(K)*ZWR + ZR(K)*ZWI
+    ZY((K-1)*2+2,I) = ZR(K)*ZWR - ZI(K)*ZWI
+  ENDDO
+ENDDO
+
+! IFFT as a FFT with swapped input and swapped output
+
+CALL FFT992(ZY,TB%FFT992_TABLE(IPO2)%TRIGS,TB%FFT992_TABLE(IPO2)%NFAX,IINC,IJUMP,M,ILOT,IFFTSIGN,1.0_JPRB/REAL(M,KIND=JPRB))
+CALL FFT992_CC (ZY, IINC, IJUMP, M, ILOT, IFFTSIGN)
+
+! create final by mult with another bluestein n**2 and swap output of prev FFT
+! postprocessing
+
+SELECT CASE (EFFECTIVE_LAYOUT)
+CASE (BLUESTEIN_LAYOUT_LOT_CONTIGUOUS)
+  IF( KSIGN==-1) THEN
+
+    DO I=0,N/2
+      DO K=1,KLOT
+        ZI(K)=ZY((K-1)*2+1,I)
+        ZR(K)=ZY((K-1)*2+2,I)
+      ENDDO
+
+      ZWR=TB%FFTB(N)%HS(1,I,ISIGN)
+      ZWI=TB%FFTB(N)%HS(2,I,ISIGN)
+      IR=I*2+1
+      II=I*2+2
+      DO K=1,KLOT
+        PDAT(K,IR) = ZR(K)*ZWR + ZI(K)*ZWI
+        PDAT(K,II) = ZI(K)*ZWR - ZR(K)*ZWI
+      ENDDO
+    ENDDO
+
+  ELSE
+
+    DO I=0,N-1
+
+      DO K=1,KLOT
+        ZI(K)=ZY((K-1)*2+1,I)
+        ZR(K)=ZY((K-1)*2+2,I)
+      ENDDO
+
+      ZWR=TB%FFTB(N)%HS(1,I,ISIGN)
+      ZWI=TB%FFTB(N)%HS(2,I,ISIGN)
+
+      DO K=1,KLOT
+        PDAT(K,I+1) = ZR(K)*ZWR + ZI(K)*ZWI
+      ENDDO
+    ENDDO
+    DO K=1,KLOT
+      PDAT(K,N) =PDAT(K,N) + ZX0(K)
+    ENDDO
+
+  ENDIF
+CASE (BLUESTEIN_LAYOUT_FFT_CONTIGUOUS)
+  IF( KSIGN==-1) THEN
+
+    DO I=0,N/2
+      DO K=1,KLOT
+        ZI(K)=ZY((K-1)*2+1,I)
+        ZR(K)=ZY((K-1)*2+2,I)
+      ENDDO
+
+      ZWR=TB%FFTB(N)%HS(1,I,ISIGN)
+      ZWI=TB%FFTB(N)%HS(2,I,ISIGN)
+      IR=I*2+1
+      II=I*2+2
+      DO K=1,KLOT
+        PDAT(IR,K) = ZR(K)*ZWR + ZI(K)*ZWI
+        PDAT(II,K) = ZI(K)*ZWR - ZR(K)*ZWI
+      ENDDO
+    ENDDO
+
+  ELSE
+
+    DO I=0,N-1
+
+      DO K=1,KLOT
+        ZI(K)=ZY((K-1)*2+1,I)
+        ZR(K)=ZY((K-1)*2+2,I)
+      ENDDO
+
+      ZWR=TB%FFTB(N)%HS(1,I,ISIGN)
+      ZWI=TB%FFTB(N)%HS(2,I,ISIGN)
+
+      DO K=1,KLOT
+        PDAT(I+1,K) = ZR(K)*ZWR + ZI(K)*ZWI
+      ENDDO
+    ENDDO
+    DO K=1,KLOT
+      PDAT(N,K) =PDAT(N,K) + ZX0(K)
+    ENDDO
+
+  ENDIF
+END SELECT
+
+DEALLOCATE(ZY)
+DEALLOCATE(ZDATAR)
+DEALLOCATE(ZDATAI)
+
+RETURN
+END PROCEDURE BLUESTEIN_FFT
+
+SUBROUTINE FFTB_TYPE_SETUP(TB, NMAX)
+TYPE(FFTB_TYPE), INTENT(INOUT) :: TB
+INTEGER(KIND=INT32), INTENT(IN) :: NMAX
+INTEGER(KIND=JPIM) :: M,IPO2,J
+IF (ALLOCATED(TB%FFTB)) THEN
+  IF (NMAX > SIZE(TB%FFTB)) THEN
+    CALL ABOR1('BLUESTEIN_PREPARE: NMAX EXCEEDS SIZE OF ALLOCATED TB%FFTB')
+  ENDIF
+  RETURN
+ENDIF
+ALLOCATE(TB%FFTB(NMAX))
+DO J=1,NMAX
+  TB%FFTB(J)%NSIZE=-1
+ENDDO
+! determine number of PO2 FFT sizes needed by Bluestein FFTs
+M=1
+IPO2=0
+DO WHILE( M<=2*NMAX-2)
+  M=M*2
+  IPO2=IPO2+1
+ENDDO
+!WRITE(*,'("BLUESTEIN_INIT: 2*KLON-2=",I5," M=",I5," IPO2=",I2)')2*NMAX-2,M,IPO2
+ALLOCATE(TB%FFT992_TABLE(IPO2))
+END SUBROUTINE FFTB_TYPE_SETUP
+
+
+MODULE PROCEDURE BLUESTEIN_PLAN_FFT
+INTEGER(KIND=JPIM) :: M,IPO2,K,ISIGN,KSIGN
+INTEGER(KIND=JPIM) :: IJUMP,ILOT,IINC,IFFTSIGN
+REAL(KIND=JPRB) :: DEL,ANGLE,ZSIGN
+LOGICAL :: LLUSEFFT992
+
+IF (.NOT. ALLOCATED(TB%FFTB)) THEN
+  CALL FFTB_TYPE_SETUP(TB, NMAX_UPPER_LIMIT)
+ENDIF
+CALL FFTB_TYPE_SETUP(TB, N)
+
+IF( TB%FFTB(N)%NSIZE==N )THEN
+  ! we have already initialised this latitude length
+  ! WRITE(0,'("BLUESTEIN_INIT: WARNING - LATITUDE LENGTH ",I6," ALREADY INITIALIZED")')N
+  RETURN
+ENDIF
+
+! Initialize the Bluestein plan for one latitude length using the shared FFT992 tables.
+M=1
+IPO2=0
+DO WHILE( M<=2*N-2)
+  M=M*2
+  IPO2=IPO2+1
+ENDDO
+
+TB%FFTB(N)%NSIZE=N
+
+DEL=2.0D0*ASIN(1.0D0)/REAL(N,JPRB)
+
+ALLOCATE(TB%FFTB(N)%HS(2,0:N-1,2))
+ALLOCATE(TB%FFTB(N)%H2xT(2,0:(M/2+1)*2,2))
+
+DO ISIGN=1,2
+
+  IF( ISIGN==1 )THEN
+    KSIGN=-1
+  ELSE
+    KSIGN= 1
+  ENDIF
+
+  ZSIGN=-KSIGN
+
+  ! conjugate bluestein sequence
+
+  DO K=0,N-1
+    ANGLE=REAL(K*K,JPRB)*DEL
+    TB%FFTB(N)%HS(1,K,ISIGN)=COS(ANGLE)
+    TB%FFTB(N)%HS(2,K,ISIGN)=ZSIGN*SIN(ANGLE)
+  ENDDO
+
+  DO K=0,(M/2+1)*2
+    TB%FFTB(N)%H2xT(1,K,ISIGN) = 0._JPRB
+    TB%FFTB(N)%H2xT(2,K,ISIGN) = 0._JPRB
+  ENDDO
+  TB%FFTB(N)%H2xT(1,0,ISIGN) = TB%FFTB(N)%HS(1,0,ISIGN)
+  TB%FFTB(N)%H2xT(2,0,ISIGN) = TB%FFTB(N)%HS(2,0,ISIGN)
+
+  DO K=1,N-1
+    TB%FFTB(N)%H2xT(1,K,ISIGN)   = TB%FFTB(N)%HS(1,K,ISIGN)
+    TB%FFTB(N)%H2xT(1,M-K,ISIGN) = TB%FFTB(N)%HS(1,K,ISIGN)
+    TB%FFTB(N)%H2xT(2,K,ISIGN)   = TB%FFTB(N)%HS(2,K,ISIGN)
+    TB%FFTB(N)%H2xT(2,M-K,ISIGN) = TB%FFTB(N)%HS(2,K,ISIGN)
+  ENDDO
+  IF( M > 2*N-2 ) THEN
+    DO K=N,M-N+1
+      TB%FFTB(N)%H2xT(1,K,ISIGN) = 0._JPRB
+      TB%FFTB(N)%H2xT(2,K,ISIGN) = 0._JPRB
+    ENDDO
+  ENDIF
+
+  !
+  ! Compute an unnormalized discrete Fourier transform of H2 -> H_hat
+  !
+  ILOT=2
+  IINC=ILOT
+  IJUMP=1
+  IFFTSIGN=1  ! C->R
+  TB%FFTB(N)%FFT992_PLAN => TB%FFT992_TABLE(IPO2)
+  IF (.NOT. ALLOCATED(TB%FFTB(N)%FFT992_PLAN%TRIGS)) THEN
+    ALLOCATE(TB%FFTB(N)%FFT992_PLAN%TRIGS(M))
+    ALLOCATE(TB%FFTB(N)%FFT992_PLAN%NFAX(10))
+    TB%FFTB(N)%FFT992_PLAN%TRIGS(:)=0.0_JPRB
+    TB%FFTB(N)%FFT992_PLAN%NFAX (:)=0
+    CALL SET99B(TB%FFTB(N)%FFT992_PLAN%TRIGS,TB%FFTB(N)%FFT992_PLAN%NFAX,M,LLUSEFFT992)
+    IF( .NOT.LLUSEFFT992 )THEN
+      CALL ABOR1("INITIALIZE_BLUESTEIN_FFT_PLAN: UNEXPECTED LLUSEFFT992=F")
+    ENDIF
+  ENDIF
+  CALL FFT992_CC(TB%FFTB(N)%H2xT(:,:,ISIGN),IINC,IJUMP,M,ILOT,IFFTSIGN)
+  CALL FFT992(TB%FFTB(N)%H2xT(:,:,ISIGN),TB%FFTB(N)%FFT992_PLAN%TRIGS,TB%FFTB(N)%FFT992_PLAN%NFAX, IINC,IJUMP,M,ILOT,IFFTSIGN,1.0_JPRB)
+
+ENDDO ! ISIGN
+
+END PROCEDURE BLUESTEIN_PLAN_FFT
+
+!=============================================================================
+MODULE PROCEDURE BLUESTEIN_INIT
+!
+! Initialize data structures required by Bluestein FFT
+!
+!
+INTEGER(KIND=JPIM) :: N,M,IPO2,J,NMAX
+
+NMAX=0
+DO J=1,SIZE(NFFTS)
+  N=NFFTS(J)
+  IF( N > NMAX )THEN
+    NMAX=N
+  ENDIF
+ENDDO
+CALL FFTB_TYPE_SETUP(TB, NMAX)
+
+DO J=1,SIZE(NFFTS)
+  CALL BLUESTEIN_PLAN_FFT(TB, NFFTS(J))
+ENDDO
+
+RETURN
+END PROCEDURE BLUESTEIN_INIT
+
+
+!=============================================================================
+MODULE PROCEDURE BLUESTEIN_TERM
+!
+! Remove data structures used by Bluestein FFT
+!
+!
+INTEGER(KIND=JPIM) :: N, IPO2
+
+IF ( ALLOCATED(TB%FFTB) ) THEN
+  DO N=1,SIZE(TB%FFTB)
+    IF( ALLOCATED(TB%FFTB(N)%HS) )   DEALLOCATE(TB%FFTB(N)%HS)
+    IF( ALLOCATED(TB%FFTB(N)%H2xT) ) DEALLOCATE(TB%FFTB(N)%H2xT)
+    IF( ASSOCIATED(TB%FFTB(N)%FFT992_PLAN) ) NULLIFY(TB%FFTB(N)%FFT992_PLAN)
+  ENDDO
+  DEALLOCATE(TB%FFTB)
+ENDIF
+IF (ALLOCATED(TB%FFT992_TABLE) ) THEN
+  DO IPO2=1,SIZE(TB%FFT992_TABLE)
+    IF (ALLOCATED(TB%FFT992_TABLE(IPO2)%TRIGS)) DEALLOCATE(TB%FFT992_TABLE(IPO2)%TRIGS)
+    IF (ALLOCATED(TB%FFT992_TABLE(IPO2)%NFAX))  DEALLOCATE(TB%FFT992_TABLE(IPO2)%NFAX)
+  ENDDO
+  DEALLOCATE(TB%FFT992_TABLE)
+ENDIF
+RETURN
+END PROCEDURE BLUESTEIN_TERM
+
+
+!=============================================================================
+
