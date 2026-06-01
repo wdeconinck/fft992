@@ -7,7 +7,6 @@ include(GNUInstallDirs)
 
 set(CMAKE_Fortran_STANDARD 2008)
 set(CMAKE_Fortran_STANDARD_REQUIRED ON)
-set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/mod)
 
 set(FFT992_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/fft992")
 set(FFT992_INSTALL_MODULEDIR "module/fft992")
@@ -21,6 +20,7 @@ find_package(fiat)
 set(FFT992_BUNDLED_FIAT OFF)
 
 if (NOT fiat_FOUND)
+  set(FIAT_DUMMY_INSTALL_MODULEDIR "module/fiat_dummy")
   add_library(fiat_dummy
     src/fiat_dummy/yomhook.F90
     src/fiat_dummy/abor1.F90
@@ -32,7 +32,7 @@ if (NOT fiat_FOUND)
   target_include_directories(fiat_dummy PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/fiat_dummy>
     $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/module/fiat_dummy>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/fiat_dummy>)
+    $<INSTALL_INTERFACE:${FIAT_DUMMY_INSTALL_MODULEDIR}>)
   add_library( fiat ALIAS fiat_dummy )
   set(FFT992_BUNDLED_FIAT ON)
 endif()
@@ -54,7 +54,7 @@ set_target_properties(fft992 PROPERTIES
 )
 
 target_include_directories(fft992 PUBLIC
-   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/fft992/internal>
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src/fft992/internal>
   $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/module/fft992>
   $<INSTALL_INTERFACE:${FFT992_INSTALL_MODULEDIR}>
 )
@@ -103,13 +103,13 @@ target_link_libraries(batch_fft_bluestein_fft_contiguous PRIVATE fft992)
 
 include(CTest)
 enable_testing()
-add_test( test_fft992_example fft992_example )
-add_test( test_single_fft_fft992 single_fft_fft992 )
-add_test( test_single_fft_bluestein single_fft_bluestein )
-add_test( test_batch_fft_fft992_field_contiguous batch_fft_fft992_field_contiguous )
-add_test( test_batch_fft_fft992_fft_contiguous batch_fft_fft992_fft_contiguous )
-add_test( test_batch_fft_bluestein_field_contiguous batch_fft_bluestein_field_contiguous )
-add_test( test_batch_fft_bluestein_fft_contiguous batch_fft_bluestein_fft_contiguous )
+add_test( fft992_test_fft992_example fft992_example )
+add_test( fft992_test_single_fft_fft992 single_fft_fft992 )
+add_test( fft992_test_single_fft_bluestein single_fft_bluestein )
+add_test( fft992_test_batch_fft_fft992_field_contiguous batch_fft_fft992_field_contiguous )
+add_test( fft992_test_batch_fft_fft992_fft_contiguous batch_fft_fft992_fft_contiguous )
+add_test( fft992_test_batch_fft_bluestein_field_contiguous batch_fft_bluestein_field_contiguous )
+add_test( fft992_test_batch_fft_bluestein_fft_contiguous batch_fft_bluestein_fft_contiguous )
 add_test(
   NAME fft992_test_install
   COMMAND ${CMAKE_COMMAND}
@@ -131,7 +131,7 @@ if (FFT992_BUNDLED_FIAT)
   )
 
   install(DIRECTORY ${CMAKE_BINARY_DIR}/module/fiat_dummy/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fiat_dummy
+    DESTINATION ${FIAT_DUMMY_INSTALL_MODULEDIR}
     FILES_MATCHING PATTERN "*"
   )
 endif()
@@ -149,7 +149,7 @@ install(DIRECTORY ${CMAKE_BINARY_DIR}/module/fft992/
 )
 
 install(EXPORT fft992Targets
-  FILE fft992Targets.cmake
+  FILE fft992-targets.cmake
   NAMESPACE fft992::
   DESTINATION ${FFT992_INSTALL_CMAKEDIR}
 )
