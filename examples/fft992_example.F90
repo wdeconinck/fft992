@@ -9,14 +9,14 @@ implicit none
 integer(kind=jpim), parameter :: n_fft992 = 12
 integer(kind=jpim), parameter :: n_bluestein = 7
 integer(kind=jpim), parameter :: batch = 3
-integer(kind=jpim), parameter :: layout_lot_contiguous = 1
+integer(kind=jpim), parameter :: layout_field_contiguous = 1
 integer(kind=jpim), parameter :: layout_fft_contiguous = 2
 real(kind=jprb), parameter :: tolerance = 500._jprb*epsilon(1._jprb)
 real(kind=jprb), parameter :: spectrum_tolerance = 2000._jprb*epsilon(1._jprb)
 
-call demo_fft992_batch(n_fft992, batch, layout_lot_contiguous)
+call demo_fft992_batch(n_fft992, batch, layout_field_contiguous)
 call demo_fft992_batch(n_fft992, batch, layout_fft_contiguous)
-call demo_bluestein_batch(n_bluestein, batch, layout_lot_contiguous)
+call demo_bluestein_batch(n_bluestein, batch, layout_field_contiguous)
 call demo_bluestein_batch(n_bluestein, batch, layout_fft_contiguous)
 
 contains
@@ -58,7 +58,7 @@ real(kind=jprb), intent(in) :: values(:,:)
 integer(kind=jpim), intent(in) :: field, point, layout
 
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   packed_value = values(field, point)
 case (layout_fft_contiguous)
   packed_value = values(point, field)
@@ -127,7 +127,7 @@ endif
 call get_fft992_layout(layout, n + 2, lot, inc, jump)
 
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   allocate(work(lot, n + 2))
   allocate(original(lot, n))
 case (layout_fft_contiguous)
@@ -142,7 +142,7 @@ call fill_fft992_batch_signal(original, n, lot, layout)
 work(:,:) = 0._jprb
 
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   work(:,1:n) = original(:,:)
 case (layout_fft_contiguous)
   work(1:n,:) = original(:,:)
@@ -165,7 +165,7 @@ call print_fft_field('  Packed spectral coefficients for field 1:', work, n + 2,
 
 call fft992(work, trigs, ifax, inc, jump, n, lot, 1_jpim, 1.0_jprb)
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   max_error = maxval(abs(work(:,1:n) - original(:,:)))
 case (layout_fft_contiguous)
   max_error = maxval(abs(work(1:n,:) - original(:,:)))
@@ -189,7 +189,7 @@ integer(kind=jpim), intent(in) :: layout, npoints, lot
 integer(kind=jpim), intent(out) :: inc, jump
 
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   inc = lot
   jump = 1_jpim
 case (layout_fft_contiguous)
@@ -225,7 +225,7 @@ do jf = 1, lot
       value = value + signal_cosine_weight(field0, harmonic)*cos(harmonic_angle)
     enddo
     select case (layout)
-    case (layout_lot_contiguous)
+    case (layout_field_contiguous)
       values(jf,jj) = value
     case (layout_fft_contiguous)
       values(jj,jf) = value
@@ -243,7 +243,7 @@ real(kind=jprb), intent(in) :: values(:,:)
 integer(kind=jpim), intent(in) :: klen, layout
 
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   call print_vector(title, values(1,1:klen))
 case (layout_fft_contiguous)
   call print_vector(title, values(1:klen,1))
@@ -257,7 +257,7 @@ character(len=32) function fft992_layout_name(layout)
 integer(kind=jpim), intent(in) :: layout
 
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   fft992_layout_name = 'lot-contiguous'
 case (layout_fft_contiguous)
   fft992_layout_name = 'fft-contiguous'
@@ -273,7 +273,7 @@ character(len=96) function fft992_layout_description(layout)
 integer(kind=jpim), intent(in) :: layout
 
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   fft992_layout_description = 'WORK(field,point), so INC=LOT and JUMP=1.'
 case (layout_fft_contiguous)
   fft992_layout_description = 'WORK(point,field), so INC=1 and JUMP=N+2.'
@@ -289,7 +289,7 @@ subroutine demo_bluestein_batch(n, klot, layout)
 integer(kind=jpim), intent(in) :: n, klot, layout
 
 type(fftb_type) :: tb
-integer(kind=jpim) :: iclen
+integer(kind=jpim) :: iclen, inc, jump
 real(kind=jprb), allocatable :: work(:,:)
 real(kind=jprb), allocatable :: original(:,:)
 real(kind=jprb) :: max_error
@@ -300,9 +300,10 @@ nffts = n
 call bluestein_init(tb,jprb,nffts)
 
 iclen = (n/2 + 1)*2
+call get_fft992_layout(layout, iclen, klot, inc, jump)
 
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   allocate(work(klot, iclen))
   allocate(original(klot, n))
 case (layout_fft_contiguous)
@@ -317,7 +318,7 @@ call fill_fft992_batch_signal(original, n, klot, layout)
 work(:,:) = 0._jprb
 
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   work(:,1:n) = original(:,:)
 case (layout_fft_contiguous)
   work(1:n,:) = original(:,:)
@@ -327,7 +328,7 @@ write(*,'(a)') 'BLUESTEIN_FFT example'
 write(*,'(a)') '  Layout mode: '//trim(fft992_layout_name(layout))
 write(*,'(a,i0,a,i0,a)') '  Arbitrary length N=', n, ', KLOT=', klot, ' batched vectors.'
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   write(*,'(a)') '  Layout: WORK(field,packed_point) with packed spectral size ICLEN=(N/2+1)*2.'
 case (layout_fft_contiguous)
   write(*,'(a)') '  Layout: WORK(packed_point,field) with packed spectral size ICLEN=(N/2+1)*2.'
@@ -335,10 +336,10 @@ end select
 
 call print_fft_field('  Packed gridpoint coefficients for field 1:', original, n, layout)
 call bluestein_plan_fft(tb, jprb, n)
-call bluestein_fft(tb, n, -1, klot, work, layout)
+call bluestein_fft(tb, n, -1, klot, work, inc=inc, jump=jump)
 
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   work(:,1:iclen) = work(:,1:iclen) / real(n, jprb)
 case (layout_fft_contiguous)
   work(1:iclen,:) = work(1:iclen,:) / real(n, jprb)
@@ -353,10 +354,10 @@ endif
 
 call print_fft_field('  Packed spectral coefficients for field 1:', work, iclen, layout)
 
-call bluestein_fft(tb, n, 1, klot, work, layout)
+call bluestein_fft(tb, n, 1, klot, work, inc=inc, jump=jump)
 
 select case (layout)
-case (layout_lot_contiguous)
+case (layout_field_contiguous)
   max_error = maxval(abs(work(:,1:n) - original(:,:)))
 case (layout_fft_contiguous)
   max_error = maxval(abs(work(1:n,:) - original(:,:)))

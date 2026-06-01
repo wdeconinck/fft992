@@ -2,8 +2,7 @@ program batch_fft_bluestein_fft_contiguous
 
 use, intrinsic :: iso_fortran_env, only : int32, real64
 use bluestein_mod, only : fftb_type, bluestein_init, bluestein_plan_fft, &
-                          bluestein_fft, bluestein_release, &
-                          BLUESTEIN_LAYOUT_FFT_CONTIGUOUS
+                          bluestein_fft, bluestein_release
 implicit none
 
 integer(kind=int32), parameter :: n = 7
@@ -16,6 +15,7 @@ real(kind=real64), parameter :: cos_amplitude(batch) = [0.8_real64, 0.6_real64, 
 real(kind=real64), parameter :: sin_amplitude(batch) = [0.6_real64, 0.4_real64, 0.2_real64]
 real(kind=real64), parameter :: scale_r2c = 1.0_real64 / real(n, real64)
 integer(kind=int32) :: point, field
+integer(kind=int32) :: inc, jump
 type(fftb_type) :: tb
 real(kind=real64) :: signal(n, batch)
 real(kind=real64) :: work(nfreq * 2, batch)
@@ -25,15 +25,17 @@ call bluestein_plan_fft(tb, real64, n)
 
 call initialize_signal_harmonic(harmonic, cos_amplitude, sin_amplitude)
 
-work = 0.0_real64
 work(1:n,:) = signal(:,:)
 
-call bluestein_fft(tb, n, direction_r2c, batch, work, layout=BLUESTEIN_LAYOUT_FFT_CONTIGUOUS)
+inc = 1_int32
+jump = n
+
+call bluestein_fft(tb, n, direction_r2c, batch, work, inc=1, jump=nfreq*2)
 
 work(:,:) = work(:,:) * scale_r2c
 call print_spectrum(work)
 call validate_spectrum_harmonic(harmonic, cos_amplitude, sin_amplitude)
-call bluestein_fft(tb, n, direction_c2r, batch, work, layout=BLUESTEIN_LAYOUT_FFT_CONTIGUOUS)
+call bluestein_fft(tb, n, direction_c2r, batch, work, inc=1, jump=nfreq*2)
 
 call validate_roundtrip()
 

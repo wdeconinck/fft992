@@ -41,8 +41,8 @@ real(real64)   :: spectrum(nfreq * 2) ! Last factor 2 because of real and imagin
 
 In `fft992` and Bluestein, a single `work` array is used as an in-place transform.
 This `work` array must be appropriately sized to hold both the real input and the packed complex output.
-  - `n` even : `nfreq * 2 == n + 2`
-  - `n` odd  : `nfreq * 2 == n + 1`
+  - Even `n` : `nfreq * 2 = n + 2`
+  - Odd `n`  : `nfreq * 2 = n + 1`
 
 ```fortran
 real(real64) :: work(nfreq * 2)
@@ -65,9 +65,9 @@ Unlike `fft992`, a `scale` argument is not present; and the FFTW convention is u
 
 See [examples/single_fft_bluestein.F90](examples/single_fft_bluestein.F90).
 
-## Batch FFT
+## Batch FFT
 
-## Field-Contiguous Memory Layout
+### Field-Contiguous Memory Layout
 
 In the IFS, the FFT992 and Bluestein paths are using the **field-contiguous** layout, where the batch's field index is the first array dimension (contiguous) and the point/frequency index is the second dimension (strided). This dates from times for vector-machines taking advantage of SIMD instructions in the field dimension.
 
@@ -81,7 +81,6 @@ The complex data (spectrum) is typically stored as:
 
 ```fortran
 real(real64) :: values(batch, (n/2+1) * 2) ! Last factor 2 because of real and imaginary parts!
-```
 ```
 
 In `fft992` and Bluestein, a single `work` array is used as an in-place transform. This `work` array must be appropriately sized to encapsulate real and complex data.
@@ -97,7 +96,7 @@ The packed coefficients are stored as interleaved real and imaginary parts along
 - `work(field, 3)` is the real part of frequency `1`
 - `work(field, 4)` is the imaginary part of frequency `1`
 
-More generally, for frequency `k`, the packed locations are `2*k+1` for the real part and `2*k+2` for the imaginary part.
+More generally, for frequency `k=0:n/2`, the packed locations are `2*k+1` for the real part and `2*k+2` for the imaginary part.
 
 For `fft992`, the same buffer is used for both the real input and the packed spectral output, so examples often allocate `(n/2+1) * 2` values per transform.
 
@@ -105,7 +104,7 @@ With `batch = 1`, this degenerates to a single row, but the indexing convention 
 
 See [examples/batch_fft_fft992_field_contiguous.F90](examples/batch_fft_fft992_field_contiguous.F90) and [examples/batch_fft_bluestein_field_contiguous.F90](examples/batch_fft_bluestein_field_contiguous.F90) for batched field-contiguous examples.
 
-## FFT-Contiguous Memory Layout
+### FFT-Contiguous Memory Layout
 
 The other supported organization is the **FFT-contiguous** layout, where the point or frequency index is the first array dimension and the batch index is the second dimension. This is a memory layout which is preferred by other high-performance mathematical libraries: FFTW, MKL.
 
@@ -130,11 +129,9 @@ The packed coefficients are still stored as interleaved real and imaginary parts
 - `work(3, field)` is the real part of frequency `1`
 - `work(4, field)` is the imaginary part of frequency `1`
 
-More generally, for frequency `k`, the packed locations are `2*k+1` for the real part and `2*k+2` for the imaginary part in the first dimension.
+More generally, for frequency `k=0:n/2`, the packed locations are `2*k+1` for the real part and `2*k+2` for the imaginary part in the first dimension.
 
-For `fft992`, this layout corresponds to `inc = 1` and `jump = (n/2+1) * 2` when using the in-place packed real work array. For Bluestein, the equivalent layout is selected by passing `BLUESTEIN_LAYOUT_FFT_CONTIGUOUS` to `bluestein_fft`.
-
-This is the layout described in the example program as `work(point,field)`, in contrast to the field-contiguous `work(field,point)` organization.
+For fft-contiguous batched transforms, both `fft992` and `bluestein` use `inc = 1`. The minimal packed leading dimension is `(n/2+1) * 2`, so `jump` is often set to that value, but it may also be larger to leave padding between transforms, for example for memory-alignment reasons.
 
 See [examples/batch_fft_fft992_fft_contiguous.F90](examples/batch_fft_fft992_fft_contiguous.F90) and [examples/batch_fft_bluestein_fft_contiguous.F90](examples/batch_fft_bluestein_fft_contiguous.F90) for batched fft-contiguous examples.
 
