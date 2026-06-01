@@ -3,11 +3,27 @@
 A standalone extraction of FFT-related code from the ECMWF ectrans repository:
 <https://github.com/ecmwf-ifs/ectrans>
 
+- FFT992
+- BLUESTEIN
+
 ## Status
 
 This repository is still a **work in progress**.
 
 - It is extracted from `ectrans` and being refactored in isolation.
+
+For `fft992`, the code has been adapted to
+
+- wrap the legacy routines in a Fortran module API through `fft992_mod`
+- provide generic overloads for single precision (`real32`) and double precision (`real64`)
+- keep the original FFT992-style entry points centered around `set99b` and `fft992`
+
+For `bluestein`, the code has been adapted to
+
+- expose a slightly different, plan-oriented API through `bluestein_mod`
+- provide overloads for both single precision (`real32`) and double precision (`real64`)
+- allow plans to be created lazily on first use and cached for reuse, or pre-plan to avoid thread-locking inplan caching
+- add support for the FFT-contiguous layout.
 
 ## Installation
 
@@ -32,15 +48,6 @@ target_link_libraries(your_target PRIVATE fft992::fft992)
 ```
 
 Fortran consumers can then `use fft992_mod` and `use bluestein_mod`; the installed target propagates the module include directory automatically.
-
-## Current Direction
-
-The code is being adapted around a Fortran module API with generic overloads for:
-
-- single precision (`real32`)
-- double precision (`real64`)
-
-Current public entry points are exposed from `fft992_mod` (for example `set99b`, `fft992`, and `fft992_cc`).
 
 ## FFT Signal Length Support
 
