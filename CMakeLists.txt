@@ -56,15 +56,35 @@ add_executable(fft992_example
 )
 target_link_libraries(fft992_example PRIVATE fft992)
 
-add_executable(simple_fft992
-  examples/simple_fft992.F90
+add_executable(single_fft_fft992
+  examples/single_fft_fft992.F90
 )
-target_link_libraries(simple_fft992 PRIVATE fft992)
+target_link_libraries(single_fft_fft992 PRIVATE fft992)
 
-add_executable(simple_bluestein
-  examples/simple_bluestein.F90
+add_executable(single_fft_bluestein
+  examples/single_fft_bluestein.F90
 )
-target_link_libraries(simple_bluestein PRIVATE fft992)
+target_link_libraries(single_fft_bluestein PRIVATE fft992)
+
+add_executable(batch_fft_fft992_field_contiguous
+  examples/batch_fft_fft992_field_contiguous.F90
+)
+target_link_libraries(batch_fft_fft992_field_contiguous PRIVATE fft992)
+
+add_executable(batch_fft_fft992_fft_contiguous
+  examples/batch_fft_fft992_fft_contiguous.F90
+)
+target_link_libraries(batch_fft_fft992_fft_contiguous PRIVATE fft992)
+
+add_executable(batch_fft_bluestein_field_contiguous
+  examples/batch_fft_bluestein_field_contiguous.F90
+)
+target_link_libraries(batch_fft_bluestein_field_contiguous PRIVATE fft992)
+
+add_executable(batch_fft_bluestein_fft_contiguous
+  examples/batch_fft_bluestein_fft_contiguous.F90
+)
+target_link_libraries(batch_fft_bluestein_fft_contiguous PRIVATE fft992)
 
 
 #### Testing
@@ -72,8 +92,12 @@ target_link_libraries(simple_bluestein PRIVATE fft992)
 include(CTest)
 enable_testing()
 add_test( test_fft992_example fft992_example )
-add_test( test_simple_fft992 simple_fft992 )
-add_test( test_simple_bluestein simple_bluestein )
+add_test( test_single_fft_fft992 single_fft_fft992 )
+add_test( test_single_fft_bluestein single_fft_bluestein )
+add_test( test_batch_fft_fft992_field_contiguous batch_fft_fft992_field_contiguous )
+add_test( test_batch_fft_fft992_fft_contiguous batch_fft_fft992_fft_contiguous )
+add_test( test_batch_fft_bluestein_field_contiguous batch_fft_bluestein_field_contiguous )
+add_test( test_batch_fft_bluestein_fft_contiguous batch_fft_bluestein_fft_contiguous )
 
 # Prohibit installation if fiat was not found
 install(CODE "

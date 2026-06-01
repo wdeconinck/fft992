@@ -19,20 +19,20 @@ The code is being adapted around a Fortran module API with generic overloads for
 
 Current public entry points are exposed from `fft992_mod` (for example `set99b`, `fft992`, and `fft992_cc`).
 
-## FFT Size Support
+## FFT Signal Length Support
 
 - `fft992` supports only specific FFT sizes whose length factorization is composed of 2, 3, 5.
 - The Bluestein algorithm can be used for arbitrary FFT lengths, including cases outside the `fft992` factorization set.
 
-## A single FFT transform
+## Single FFT
 
-For a single transform of length `n`, `signal` contains real data typically stored as:
+For a single FFT of length `n`, `signal` contains real data typically stored as:
 
 ```fortran
 real(real64) :: signal(n)
 ```
 
-The spectrum consists of `nfreq = n/2 + 1` complex values, typically stored as `2 * nfreq` real values.
+The spectrum consists of `nfreq = n/2 + 1` complex values, but stored as `2 * nfreq` real values.
 
 ```fortran
 integer(int32) :: nfreq = n/2+1
@@ -52,41 +52,42 @@ real(real64) :: work(nfreq * 2)
 
 `fft992` requires the transform length to be supported by `set99b`.
 
-See [examples/simple_fft992.F90](examples/simple_fft992.F90).
+See [examples/single_fft_fft992.F90](examples/single_fft_fft992.F90).
 
-The scaling factor `SCALE_R2C = 1/n` normalizes the spectrum. Note that other libraries like **FFTW** do **not** apply
-this scaling factor. The original implementation of `fft992` did not have this argument.
-The `scale` argument has been added to allow for integration in algorithms that use the FFTW convention.
+This example contains a scaling factor `SCALE_R2C = 1/n` passed as argument to `fft992` which internally normalizes the spectrum. Note that some other libraries like **FFTW** do **not** apply any scaling factor.
+The original implementation of `fft992` did not have this argument, and scaling was always applied internally.
+This libary extends the API with a `scale` argument to allow for integration in algorithms that use the FFTW convention.
 
 ### Bluestein example
 
 Bluestein can be used for arbitrary `n`, including lengths outside the `fft992` factorization support.
-Unlike `fft992`, a `scale` argument is not present; and the FFTW convention is used (unnormalized).
+Unlike `fft992`, a `scale` argument is not present; and the FFTW convention is used (not normalized).
 
-See [examples/simple_bluestein.F90](examples/simple_bluestein.F90).
+See [examples/single_fft_bluestein.F90](examples/single_fft_bluestein.F90).
 
+## Batch FFT
 
-## Lot-Contiguous Memory Layout
+## Field-Contiguous Memory Layout
 
-In the IFS, the FFT992 and Bluestein paths are using the **lot-contiguous** layout, where the batch index is the first array dimension (contiguous) and the point/frequency index is the second dimension (strided).
+In the IFS, the FFT992 and Bluestein paths are using the **field-contiguous** layout, where the batch's field index is the first array dimension (contiguous) and the point/frequency index is the second dimension (strided). This dates from times for vector-machines taking advantage of SIMD instructions in the field dimension.
 
-For `lot` transforms of length `n`, real data (signal) is typically stored as:
+For `batch` transforms of length `n`, real data (signal) is typically stored as:
 
 ```fortran
-real(real64) :: values(lot, n)
+real(real64) :: values(batch,n)
 ```
 
 The complex data (spectrum) is typically stored as:
 
 ```fortran
-real(real64) :: values(lot, (n/2+1) * 2) ! Last factor 2 because of real and imaginary parts!
+real(real64) :: values(batch, (n/2+1) * 2) ! Last factor 2 because of real and imaginary parts!
 ```
 ```
 
 In `fft992` and Bluestein, a single `work` array is used as an in-place transform. This `work` array must be appropriately sized to encapsulate real and complex data.
 
 ```fortran
-real(real64) :: work(lot, (n/2+1) * 2)
+real(real64) :: work(batch, (n/2+1) * 2)
 ```
 
 The packed coefficients are stored as interleaved real and imaginary parts along the second dimension:
@@ -100,24 +101,26 @@ More generally, for frequency `k`, the packed locations are `2*k+1` for the real
 
 For `fft992`, the same buffer is used for both the real input and the packed spectral output, so examples often allocate `(n/2+1) * 2` values per transform.
 
-With `lot = 1`, this degenerates to a single row, but the indexing convention is the same as the batched `work(lot, (n/2+1) * 2)` layout.
+With `batch = 1`, this degenerates to a single row, but the indexing convention is the same as the batched `work(batch, (n/2+1) * 2)` layout.
+
+See [examples/batch_fft_fft992_field_contiguous.F90](examples/batch_fft_fft992_field_contiguous.F90) and [examples/batch_fft_bluestein_field_contiguous.F90](examples/batch_fft_bluestein_field_contiguous.F90) for batched field-contiguous examples.
 
 ## FFT-Contiguous Memory Layout
 
-The other supported organization is the **FFT-contiguous** layout, where the point or frequency index is the first array dimension and the batch index is the second dimension.
+The other supported organization is the **FFT-contiguous** layout, where the point or frequency index is the first array dimension and the batch index is the second dimension. This is a memory layout which is preferred by other high-performance mathematical libraries: FFTW, MKL.
 
-For `lot` transforms of length `n`, real input data is typically stored as:
+For `batch` transforms of length `n`, real input data is typically stored as:
 
 ```fortran
-real(real64) :: values(n, lot)
+real(real64) :: values(n, batch)
 ```
 
 In that layout, `values(point, field)` accesses one grid-point value for one transform in the batch.
 
-For real-to-complex transforms, the packed spectral output uses the same packed length as in the lot-contiguous case:
+For real-to-complex transforms, the packed spectral output uses the same packed length as in the field-contiguous case:
 
 ```fortran
-real(real64) :: work((n/2+1) * 2, lot)
+real(real64) :: work((n/2+1) * 2, batch)
 ```
 
 The packed coefficients are still stored as interleaved real and imaginary parts, but now along the first dimension:
@@ -129,9 +132,11 @@ The packed coefficients are still stored as interleaved real and imaginary parts
 
 More generally, for frequency `k`, the packed locations are `2*k+1` for the real part and `2*k+2` for the imaginary part in the first dimension.
 
-For `fft992`, this layout corresponds to `inc = 1` and `jump = (n/2+1) * 2` when using the in-place packed real work array.
+For `fft992`, this layout corresponds to `inc = 1` and `jump = (n/2+1) * 2` when using the in-place packed real work array. For Bluestein, the equivalent layout is selected by passing `BLUESTEIN_LAYOUT_FFT_CONTIGUOUS` to `bluestein_fft`.
 
-This is the layout described in the example program as `WORK(point,field)`, in contrast to the lot-contiguous `WORK(field,point)` organization.
+This is the layout described in the example program as `work(point,field)`, in contrast to the field-contiguous `work(field,point)` organization.
+
+See [examples/batch_fft_fft992_fft_contiguous.F90](examples/batch_fft_fft992_fft_contiguous.F90) and [examples/batch_fft_bluestein_fft_contiguous.F90](examples/batch_fft_bluestein_fft_contiguous.F90) for batched fft-contiguous examples.
 
 ## Roadmap
 
@@ -142,6 +147,10 @@ Planned improvements include:
 
 ## Simple Fortran Example
 
-- FFT992 single-transform example: [examples/simple_fft992.F90](examples/simple_fft992.F90)
-- Bluestein single-transform example: [examples/simple_bluestein.F90](examples/simple_bluestein.F90)
+- FFT992 single-transform example: [examples/single_fft_fft992.F90](examples/single_fft_fft992.F90)
+- Bluestein single-transform example: [examples/single_fft_bluestein.F90](examples/single_fft_bluestein.F90)
+- FFT992 batch field-contiguous example: [examples/batch_fft_fft992_field_contiguous.F90](examples/batch_fft_fft992_field_contiguous.F90)
+- Bluestein batch field-contiguous example: [examples/batch_fft_bluestein_field_contiguous.F90](examples/batch_fft_bluestein_field_contiguous.F90)
+- FFT992 batch fft-contiguous example: [examples/batch_fft_fft992_fft_contiguous.F90](examples/batch_fft_fft992_fft_contiguous.F90)
+- Bluestein batch fft-contiguous example: [examples/batch_fft_bluestein_fft_contiguous.F90](examples/batch_fft_bluestein_fft_contiguous.F90)
 - Extended batched/layout example: [examples/fft992_example.F90](examples/fft992_example.F90)
