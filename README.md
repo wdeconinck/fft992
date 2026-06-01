@@ -5,10 +5,33 @@ A standalone extraction of FFT-related code from the ECMWF ectrans repository:
 
 ## Status
 
-This repository is a **work in progress**.
+This repository is still a **work in progress**.
 
 - It is extracted from `ectrans` and being refactored in isolation.
-- It **does not yet support installation** as a library/package.
+
+## Installation
+
+The library can be installed with CMake and exported as a package for downstream CMake projects:
+
+```sh
+cmake -S . -B build
+cmake --build build --target fft992
+cmake --install build --prefix /path/to/install/prefix
+```
+
+This installs the `fft992` library, the generated Fortran module files, and a CMake package configuration that can be consumed with `find_package`.
+
+If an external `fiat` package is available at configure time, the installed package will depend on it. Otherwise, the local `fiat_dummy` fallback is installed and exported together with `fft992`.
+
+## Downstream CMake Usage
+
+```cmake
+find_package(fft992 CONFIG REQUIRED)
+
+target_link_libraries(your_target PRIVATE fft992::fft992)
+```
+
+Fortran consumers can then `use fft992_mod` and `use bluestein_mod`; the installed target propagates the module include directory automatically.
 
 ## Current Direction
 

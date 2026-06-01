@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+set(FFT992_BUNDLED_FIAT @FFT992_BUNDLED_FIAT@)
+
+include(CMakeFindDependencyMacro)
+
+if(NOT FFT992_BUNDLED_FIAT)
+  find_dependency(fiat)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/fft992Targets.cmake")
+
+check_required_components(fft992)
